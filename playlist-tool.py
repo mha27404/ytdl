@@ -67,8 +67,16 @@ class PlaylistExtractorApp(ctk.CTk):
                 self.status_label.configure(text="هیچ پلی‌لیستی پیدا نشد.")
                 return
             df = pd.DataFrame(playlists)
-            df.to_excel('playlists.xlsx', index=False)
-            messagebox.showinfo("موفقیت", "فایل playlists.xlsx با موفقیت ذخیره شد.")
+            # استخراج نام کانال از آدرس
+            import re
+            match = re.search(r"(?:channel/|@)([\w\-\.]+)", channel_url)
+            if match:
+                channel_name = match.group(1)
+            else:
+                channel_name = "channel"
+            excel_filename = f"{channel_name}_playlists.xlsx"
+            df.to_excel(excel_filename, index=False)
+            messagebox.showinfo("موفقیت", f"فایل {excel_filename} با موفقیت ذخیره شد.")
             self.status_label.configure(text="استخراج کامل شد!")
         except Exception as e:
             messagebox.showerror("خطا", f"خطا: {str(e)}")
