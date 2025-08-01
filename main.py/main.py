@@ -190,3 +190,4 @@ class YouTubeDownloader(ctk.CTk):
 if __name__ == "__main__":
     app = YouTubeDownloader()
     app.mainloop()
+    # پایان برنامه 
