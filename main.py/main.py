@@ -15,7 +15,7 @@ class YouTubeDownloader(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("دانلودر یوتیوب - مدرن")
-        self.geometry("600x500")
+        self.geometry("600x550")
         self.resizable(False, False)
 
         # متغیرها
@@ -25,6 +25,10 @@ class YouTubeDownloader(ctk.CTk):
         self.download_path = os.path.expanduser("~") + "/Downloads"
         self.use_cookies = False
         self.browser = "chrome"
+        self.scheduled_time = None
+        self._remaining_seconds = 0
+        self._timer_thread = None
+        self._stop_timer = threading.Event()
 
         # رابط گرافیکی
         self.create_widgets()
@@ -33,6 +37,29 @@ class YouTubeDownloader(ctk.CTk):
         # عنوان
         label = ctk.CTkLabel(self, text="دانلودر یوتیوب", font=("Arial", 24))
         label.pack(pady=20)
+
+        # زمانبندی دانلود
+        schedule_frame = ctk.CTkFrame(self)
+        schedule_frame.pack(pady=10)
+        ctk.CTkLabel(schedule_frame, text="زمانبندی دانلود (اختیاری):").pack(side="left", padx=10)
+        self.schedule_entry = ctk.CTkEntry(schedule_frame, width=120, placeholder_text="hh:mm")
+        self.schedule_entry.pack(side="left")
+        ctk.CTkLabel(schedule_frame, text="(مثال: 23:30)").pack(side="left", padx=5)
+
+        # دکمه دانلود
+        download_btn = ctk.CTkButton(self, text="دانلود", command=self.handle_download_button, fg_color="green", hover_color="dark green")
+        download_btn.pack(pady=20)
+
+        # پیشرفت
+        self.progress = ctk.CTkProgressBar(self, width=400)
+        self.progress.pack(pady=10)
+        self.progress.set(0)
+        self.status_label = ctk.CTkLabel(self, text="وضعیت: آماده")
+        self.status_label.pack(pady=10)
+
+        # نمایش زمان باقی‌مانده تا شروع دانلود
+        self.timer_label = ctk.CTkLabel(self, text="")
+        self.timer_label.pack(pady=5)
 
         # انتخاب حالت
         mode_frame = ctk.CTkFrame(self)
@@ -76,16 +103,42 @@ class YouTubeDownloader(ctk.CTk):
         self.browser_menu.pack(side="left", padx=10)
         self.browser_menu.configure(state="disabled")
 
-        # دکمه دانلود
-        download_btn = ctk.CTkButton(self, text="دانلود", command=self.start_download, fg_color="green", hover_color="dark green")
-        download_btn.pack(pady=20)
 
-        # پیشرفت
-        self.progress = ctk.CTkProgressBar(self, width=400)
-        self.progress.pack(pady=10)
-        self.progress.set(0)
-        self.status_label = ctk.CTkLabel(self, text="وضعیت: آماده")
-        self.status_label.pack(pady=10)
+    # ...
+    def handle_download_button(self):
+        # بررسی زمانبندی
+        schedule_str = self.schedule_entry.get().strip()
+        if schedule_str:
+            import datetime
+            try:
+                now = datetime.datetime.now()
+                hour, minute = map(int, schedule_str.split(":"))
+                scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if scheduled < now:
+                    scheduled = scheduled + datetime.timedelta(days=1)
+                self.scheduled_time = scheduled
+                self._remaining_seconds = int((scheduled - now).total_seconds())
+                self.status_label.configure(text=f"دانلود زمانبندی شد برای {scheduled.strftime('%H:%M')}")
+                self._stop_timer.clear()
+                self._timer_thread = threading.Thread(target=self._countdown_and_start_download)
+                self._timer_thread.start()
+            except Exception:
+                messagebox.showerror("خطا", "فرمت زمان اشتباه است. مثال: 23:30")
+        else:
+            self.start_download()
+
+    def _countdown_and_start_download(self):
+        import time
+        while self._remaining_seconds > 0 and not self._stop_timer.is_set():
+            mins, secs = divmod(self._remaining_seconds, 60)
+            hours, mins = divmod(mins, 60)
+            time_str = f"زمان باقی‌مانده تا شروع دانلود: {hours:02d}:{mins:02d}:{secs:02d}"
+            self.timer_label.after(0, lambda t=time_str: self.timer_label.configure(text=t))
+            time.sleep(1)
+            self._remaining_seconds -= 1
+        if not self._stop_timer.is_set():
+            self.timer_label.after(0, lambda: self.timer_label.configure(text=""))
+            self.start_download()
 
     def toggle_cookies(self):
         self.use_cookies = self.cookie_check.get()
@@ -104,6 +157,8 @@ class YouTubeDownloader(ctk.CTk):
             messagebox.showerror("خطا", "لطفاً URL وارد کنید!")
             return
 
+        # اگر تایمر فعال بود، متوقف کن
+        self._stop_timer.set()
         threading.Thread(target=self.download).start()
 
     def download(self):
