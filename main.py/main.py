@@ -31,19 +31,22 @@ class YouTubeDownloader(ctk.CTk):
         self._stop_timer = threading.Event()
 
         # رابط گرافیکی
-        self.create_widgets()
+        self.create_widgets()  # Call to create widgets
 
     def create_widgets(self):
         # عنوان
         label = ctk.CTkLabel(self, text="دانلودر یوتیوب", font=("Arial", 24))
         label.pack(pady=20)
 
-        # زمانبندی دانلود
+        # زمانبندی دانلود (شروع و پایان)
         schedule_frame = ctk.CTkFrame(self)
         schedule_frame.pack(pady=10)
-        ctk.CTkLabel(schedule_frame, text="زمانبندی دانلود (اختیاری):").pack(side="left", padx=10)
-        self.schedule_entry = ctk.CTkEntry(schedule_frame, width=120, placeholder_text="hh:mm")
-        self.schedule_entry.pack(side="left")
+        ctk.CTkLabel(schedule_frame, text="زمان شروع:").pack(side="left", padx=5)
+        self.schedule_start_entry = ctk.CTkEntry(schedule_frame, width=70, placeholder_text="hh:mm")
+        self.schedule_start_entry.pack(side="left")
+        ctk.CTkLabel(schedule_frame, text="زمان پایان:").pack(side="left", padx=5)
+        self.schedule_end_entry = ctk.CTkEntry(schedule_frame, width=70, placeholder_text="hh:mm")
+        self.schedule_end_entry.pack(side="left")
         ctk.CTkLabel(schedule_frame, text="(مثال: 23:30)").pack(side="left", padx=5)
 
         # دکمه دانلود
@@ -104,21 +107,30 @@ class YouTubeDownloader(ctk.CTk):
         self.browser_menu.configure(state="disabled")
 
 
-    # ...
     def handle_download_button(self):
-        # بررسی زمانبندی
-        schedule_str = self.schedule_entry.get().strip()
-        if schedule_str:
-            import datetime
+        # بررسی زمانبندی شروع و پایان
+        start_str = self.schedule_start_entry.get().strip()
+        end_str = self.schedule_end_entry.get().strip()
+        import datetime
+        if start_str:
             try:
                 now = datetime.datetime.now()
-                hour, minute = map(int, schedule_str.split(":"))
-                scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                if scheduled < now:
-                    scheduled = scheduled + datetime.timedelta(days=1)
-                self.scheduled_time = scheduled
-                self._remaining_seconds = int((scheduled - now).total_seconds())
-                self.status_label.configure(text=f"دانلود زمانبندی شد برای {scheduled.strftime('%H:%M')}")
+                hour, minute = map(int, start_str.split(":"))
+                scheduled_start = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if scheduled_start < now:
+                    scheduled_start = scheduled_start + datetime.timedelta(days=1)
+                self.scheduled_time = scheduled_start
+                self._remaining_seconds = int((scheduled_start - now).total_seconds())
+                # زمان پایان
+                if end_str:
+                    end_hour, end_minute = map(int, end_str.split(":"))
+                    scheduled_end = scheduled_start.replace(hour=end_hour, minute=end_minute)
+                    if scheduled_end <= scheduled_start:
+                        scheduled_end += datetime.timedelta(days=1)
+                    self.scheduled_end_time = scheduled_end
+                else:
+                    self.scheduled_end_time = None
+                self.status_label.configure(text=f"دانلود زمانبندی شد برای {scheduled_start.strftime('%H:%M')}{' تا ' + self.scheduled_end_time.strftime('%H:%M') if self.scheduled_end_time else ''}")
                 self._stop_timer.clear()
                 self._timer_thread = threading.Thread(target=self._countdown_and_start_download)
                 self._timer_thread.start()
@@ -129,6 +141,7 @@ class YouTubeDownloader(ctk.CTk):
 
     def _countdown_and_start_download(self):
         import time
+        # شمارش معکوس تا شروع
         while self._remaining_seconds > 0 and not self._stop_timer.is_set():
             mins, secs = divmod(self._remaining_seconds, 60)
             hours, mins = divmod(mins, 60)
@@ -138,7 +151,27 @@ class YouTubeDownloader(ctk.CTk):
             self._remaining_seconds -= 1
         if not self._stop_timer.is_set():
             self.timer_label.after(0, lambda: self.timer_label.configure(text=""))
-            self.start_download()
+            # اگر زمان پایان تعریف شده بود، دانلود را شروع و در زمان پایان متوقف کن
+            if hasattr(self, 'scheduled_end_time') and self.scheduled_end_time:
+                self._download_thread = threading.Thread(target=self._download_with_end_time)
+                self._download_thread.start()
+            else:
+                self.start_download()
+
+    def _download_with_end_time(self):
+        import datetime, time
+        self._download_active = True
+        download_thread = threading.Thread(target=self.start_download)
+        download_thread.start()
+        while self._download_active:
+            now = datetime.datetime.now()
+            if now >= self.scheduled_end_time:
+                self._stop_timer.set()
+                self.status_label.after(0, lambda: self.status_label.configure(text="دانلود به پایان زمانبندی رسید!"))
+                # اگر دانلود هنوز ادامه دارد، thread را متوقف کن (در صورت امکان)
+                # در اینجا فقط پیام می‌دهیم و کاربر باید دانلود را متوقف کند یا برنامه را ببندد
+                break
+            time.sleep(1)
 
     def toggle_cookies(self):
         self.use_cookies = self.cookie_check.get()
